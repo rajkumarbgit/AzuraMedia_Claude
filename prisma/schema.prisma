@@ -1,0 +1,275 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------- Enums ----------
+
+enum Role {
+  CEO
+  ADMIN
+  PROJECT_MANAGER
+  PRODUCTION_LEAD
+  OPS
+}
+
+enum Currency {
+  USD
+  EUR
+  GBP
+  INR
+  AED
+  SGD
+  AUD
+  JPY
+  CNY
+}
+
+enum JobStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  ON_HOLD
+  CANCELLED
+}
+
+enum MandateStatus {
+  ACTIVE
+  REMOVED
+  PENDING
+}
+
+enum ApprovalType {
+  MANDATE_ADD
+  MANDATE_REDUCE
+  JOB_AMEND
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum TaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  BLOCKED
+  COMPLETED
+}
+
+enum ShiftCode {
+  APAC
+  EMEA
+  AMER
+  GEN
+}
+
+// ---------- Core people / org ----------
+
+model Designation {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  users     User[]
+}
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  passwordHash  String
+  role          Role
+  designationId String?
+  designation   Designation? @relation(fields: [designationId], references: [id])
+  isActive      Boolean  @default(true)
+  defaultShift  ShiftCode @default(GEN)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  jobsCreated       Job[]            @relation("JobCreatedBy")
+  approvalsRequested ApprovalRequest[] @relation("ApprovalRequestedBy")
+  approvalsReviewed  ApprovalRequest[] @relation("ApprovalReviewedBy")
+  timelineEvents    TimelineEvent[]  @relation("TimelineActor")
+  leadOfTasks       Task[]           @relation("TaskLead")
+  assignments       TaskAssignment[]
+  leaves            Leave[]          @relation("LeaveOwner")
+  leavesMarkedBy    Leave[]          @relation("LeaveMarkedBy")
+  eodComments       EodComment[]
+}
+
+model Client {
+  id          String   @id @default(cuid())
+  name        String
+  contactName String?
+  contactEmail String?
+  currency    Currency @default(USD)
+  createdAt   DateTime @default(now())
+  jobs        Job[]
+}
+
+// ---------- Page-level permissions ----------
+
+model Page {
+  id    String @id @default(cuid())
+  key   String @unique
+  label String
+  permissions RolePagePermission[]
+}
+
+model RolePagePermission {
+  id        String  @id @default(cuid())
+  role      Role
+  pageId    String
+  page      Page    @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  canAccess Boolean @default(false)
+
+  @@unique([role, pageId])
+}
+
+// ---------- Jobs / Mandates / Approvals / Timeline ----------
+
+model Job {
+  id                      String    @id @default(cuid())
+  jobNo                   String    @unique
+  title                   String
+  clientId                String
+  client                  Client    @relation(fields: [clientId], references: [id])
+  currency                Currency  @default(USD)
+  clientBudget            Decimal   @db.Decimal(14, 2)
+  productionSpendPercent  Float
+  pmComment               String?   @db.Text
+  status                  JobStatus @default(DRAFT)
+  version                 Int       @default(1)
+  createdById             String
+  createdBy               User      @relation("JobCreatedBy", fields: [createdById], references: [id])
+  estimatedHours          Float?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  mandates       Mandate[]
+  approvals      ApprovalRequest[]
+  timelineEvents TimelineEvent[]
+  tasks          Task[]
+}
+
+model Mandate {
+  id          String        @id @default(cuid())
+  jobId       String
+  job         Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  status      MandateStatus @default(ACTIVE)
+  version     Int           @default(1)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model ApprovalRequest {
+  id              String         @id @default(cuid())
+  jobId           String
+  job             Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  type            ApprovalType
+  comment         String?        @db.Text
+  payload         Json
+  status          ApprovalStatus @default(PENDING)
+  requestedById   String
+  requestedBy     User           @relation("ApprovalRequestedBy", fields: [requestedById], references: [id])
+  reviewedById    String?
+  reviewedBy      User?          @relation("ApprovalReviewedBy", fields: [reviewedById], references: [id])
+  reviewComment   String?        @db.Text
+  createdAt       DateTime       @default(now())
+  reviewedAt      DateTime?
+}
+
+model TimelineEvent {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  type      String
+  description String @db.Text
+  version   Int
+  actorId   String?
+  actor     User?    @relation("TimelineActor", fields: [actorId], references: [id])
+  meta      Json?
+  createdAt DateTime @default(now())
+}
+
+// ---------- Production scheduling ----------
+
+model Task {
+  id             String     @id @default(cuid())
+  jobId          String
+  job            Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  taskNo         String     @unique
+  name           String
+  description    String?
+  leadId         String?
+  lead           User?      @relation("TaskLead", fields: [leadId], references: [id])
+  status         TaskStatus @default(NOT_STARTED)
+  estimatedHours Float      @default(0)
+  startDate      DateTime
+  endDate        DateTime
+  version        Int        @default(1)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  assignments TaskAssignment[]
+  eodComments EodComment[]
+}
+
+model TaskAssignment {
+  id          String    @id @default(cuid())
+  taskId      String
+  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  shift       ShiftCode
+  date        DateTime
+  hoursBooked Float
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, date])
+}
+
+model Shift {
+  id        String    @id @default(cuid())
+  code      ShiftCode @unique
+  label     String
+  startTime String
+  endTime   String
+  breakMins Int       @default(60)
+  isDefault Boolean   @default(false)
+}
+
+model Leave {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation("LeaveOwner", fields: [userId], references: [id])
+  date         DateTime
+  reason       String?
+  markedById   String
+  markedBy     User     @relation("LeaveMarkedBy", fields: [markedById], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@unique([userId, date])
+}
+
+model EodComment {
+  id        String   @id @default(cuid())
+  date      DateTime
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  taskId    String?
+  task      Task?    @relation(fields: [taskId], references: [id])
+  comment   String   @db.Text
+  createdAt DateTime @default(now())
+
+  // One EOD note per person per day (optionally referencing a task for context).
+  @@unique([userId, date])
+}

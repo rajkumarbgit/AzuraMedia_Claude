@@ -4,6 +4,15 @@ import { requireUser } from "@/lib/api-auth";
 import { DEFAULT_SHIFTS, shiftCapacityHours } from "@/lib/capacity";
 
 export async function GET(req: NextRequest) {
+  try {
+    return await handleGet(req);
+  } catch (e: any) {
+    console.error("GET /api/capacity failed:", e);
+    return NextResponse.json({ error: e?.message ?? "Internal error loading capacity" }, { status: 500 });
+  }
+}
+
+async function handleGet(req: NextRequest) {
   const { error } = await requireUser();
   if (error) return error;
 

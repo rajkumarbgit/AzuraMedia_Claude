@@ -11,6 +11,7 @@ const PAGE_DEFS = [
   { key: "production", label: "Production Timeline" },
   { key: "admin", label: "Admin Panel" },
   { key: "dashboard", label: "My Dashboard" },
+  { key: "portal", label: "Client Portal" },
 ];
 
 const SHIFTS = [
@@ -46,6 +47,7 @@ async function main() {
     ["OPS", "dashboard", true],
     ["ADMIN", "admin", true],
     ["ADMIN", "dashboard", true],
+    ["CLIENT", "portal", true],
   ];
   for (const [role, key, canAccess] of defaults) {
     await prisma.rolePagePermission.upsert({
@@ -131,13 +133,26 @@ async function main() {
   // Clients
   const clientA = await prisma.client.upsert({
     where: { id: "seed-client-a" },
-    update: {},
-    create: { id: "seed-client-a", name: "Nimbus Retail Group", contactName: "John Doe", contactEmail: "john@nimbusretail.com", currency: "USD" },
+    update: { code: "NIM" },
+    create: { id: "seed-client-a", name: "Nimbus Retail Group", code: "NIM", contactName: "John Doe", contactEmail: "john@nimbusretail.com", currency: "USD" },
   });
   const clientB = await prisma.client.upsert({
     where: { id: "seed-client-b" },
-    update: {},
-    create: { id: "seed-client-b", name: "Solace Bank plc", contactName: "Emma Wright", contactEmail: "emma@solacebank.co.uk", currency: "GBP" },
+    update: { code: "SOL" },
+    create: { id: "seed-client-b", name: "Solace Bank plc", code: "SOL", contactName: "Emma Wright", contactEmail: "emma@solacebank.co.uk", currency: "GBP" },
+  });
+
+  // Client portal login (role = CLIENT) for clientA, so the portal can be tested end-to-end.
+  const clientUserA = await prisma.user.upsert({
+    where: { email: "client@nimbusretail.com" },
+    update: { clientId: clientA.id },
+    create: {
+      name: "John Doe",
+      email: "client@nimbusretail.com",
+      passwordHash,
+      role: "CLIENT",
+      clientId: clientA.id,
+    },
   });
 
   // Jobs
@@ -246,6 +261,7 @@ async function main() {
   console.log("  pm@azuramedia.com / " + PASSWORD);
   console.log("  lead1@azuramedia.com / " + PASSWORD);
   console.log("  ops1@azuramedia.com / " + PASSWORD);
+  console.log("  client@nimbusretail.com / " + PASSWORD + " (client portal)");
 }
 
 main()

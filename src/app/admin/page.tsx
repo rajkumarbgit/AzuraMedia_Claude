@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Badge, Card, Input, Select } from "@/components/ui";
 import { CURRENCIES } from "@/lib/currency";
 
-const ROLES = ["CEO", "ADMIN", "PROJECT_MANAGER", "PRODUCTION_LEAD", "OPS"];
+const ROLES = ["CEO", "ADMIN", "PROJECT_MANAGER", "PRODUCTION_LEAD", "OPS", "ONSITE_MANAGER"];
 const TABS = ["Users", "Clients", "Designations", "Page Permissions"] as const;
 
 export default function AdminPage() {
@@ -38,13 +38,29 @@ export default function AdminPage() {
 function UsersTab() {
   const [users, setUsers] = useState<any[]>([]);
   const [designations, setDesignations] = useState<any[]>([]);
-  const [form, setForm] = useState({ name: "", email: "", password: "", role: "OPS", designationId: "", defaultShift: "GEN" });
+  const [clients, setClients] = useState<any[]>([]);
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    role: "OPS",
+    designationId: "",
+    defaultShift: "GEN",
+    managedClientIds: [] as string[],
+  });
   const [error, setError] = useState("");
+  const [editingClientsFor, setEditingClientsFor] = useState<string | null>(null);
+  const [editClientIds, setEditClientIds] = useState<string[]>([]);
 
   async function load() {
-    const [u, d] = await Promise.all([fetch("/api/users").then((r) => r.json()), fetch("/api/designations").then((r) => r.json())]);
+    const [u, d, c] = await Promise.all([
+      fetch("/api/users").then((r) => r.json()),
+      fetch("/api/designations").then((r) => r.json()),
+      fetch("/api/clients").then((r) => r.json()),
+    ]);
     setUsers(u);
     setDesignations(d);
+    setClients(c);
   }
 
   useEffect(() => {
@@ -63,13 +79,42 @@ function UsersTab() {
       setError((await res.json()).error ?? "Failed");
       return;
     }
-    setForm({ name: "", email: "", password: "", role: "OPS", designationId: "", defaultShift: "GEN" });
+    setForm({ name: "", email: "", password: "", role: "OPS", designationId: "", defaultShift: "GEN", managedClientIds: [] });
     load();
   }
 
   async function removeUser(id: string) {
     if (!window.confirm("Deactivate this user?")) return;
     await fetch(`/api/users/${id}`, { method: "DELETE" });
+    load();
+  }
+
+  function toggleFormClient(clientId: string) {
+    setForm((f) => ({
+      ...f,
+      managedClientIds: f.managedClientIds.includes(clientId)
+        ? f.managedClientIds.filter((id) => id !== clientId)
+        : [...f.managedClientIds, clientId],
+    }));
+  }
+
+  function startEditClients(u: any) {
+    setEditingClientsFor(u.id);
+    setEditClientIds(u.managedClients?.map((mc: any) => mc.clientId) ?? []);
+  }
+
+  function toggleEditClient(clientId: string) {
+    setEditClientIds((ids) => (ids.includes(clientId) ? ids.filter((id) => id !== clientId) : [...ids, clientId]));
+  }
+
+  async function saveEditClients() {
+    if (!editingClientsFor) return;
+    await fetch(`/api/users/${editingClientsFor}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ managedClientIds: editClientIds }),
+    });
+    setEditingClientsFor(null);
     load();
   }
 
@@ -115,6 +160,22 @@ function UsersTab() {
               </option>
             ))}
           </Select>
+          {form.role === "ONSITE_MANAGER" && (
+            <div className="border border-[rgb(var(--border))] rounded-lg p-2 max-h-36 overflow-y-auto space-y-1">
+              <p className="text-xs text-[rgb(var(--muted))] mb-1">Tag to client(s):</p>
+              {clients.map((c) => (
+                <label key={c.id} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={form.managedClientIds.includes(c.id)}
+                    onChange={() => toggleFormClient(c.id)}
+                  />
+                  {c.name}
+                </label>
+              ))}
+              {clients.length === 0 && <p className="text-xs text-[rgb(var(--muted))]">No clients yet.</p>}
+            </div>
+          )}
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button className="btn-primary w-full">Add User</button>
         </form>
@@ -130,6 +191,7 @@ function UsersTab() {
               <th className="p-2">Role</th>
               <th className="p-2">Designation</th>
               <th className="p-2">Shift</th>
+              <th className="p-2">Tagged Clients</th>
               <th className="p-2"></th>
             </tr>
           </thead>
@@ -143,6 +205,38 @@ function UsersTab() {
                 </td>
                 <td className="p-2">{u.designation?.name ?? "—"}</td>
                 <td className="p-2">{u.defaultShift}</td>
+                <td className="p-2">
+                  {u.role === "ONSITE_MANAGER" ? (
+                    editingClientsFor === u.id ? (
+                      <div className="space-y-1">
+                        <div className="border border-[rgb(var(--border))] rounded-lg p-2 max-h-32 overflow-y-auto space-y-1 min-w-[160px]">
+                          {clients.map((c) => (
+                            <label key={c.id} className="flex items-center gap-2 text-xs">
+                              <input type="checkbox" checked={editClientIds.includes(c.id)} onChange={() => toggleEditClient(c.id)} />
+                              {c.name}
+                            </label>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={saveEditClients} className="text-xs text-brand-600 hover:underline">
+                            Save
+                          </button>
+                          <button onClick={() => setEditingClientsFor(null)} className="text-xs text-[rgb(var(--muted))] hover:underline">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button onClick={() => startEditClients(u)} className="text-xs text-brand-600 hover:underline text-left">
+                        {u.managedClients?.length > 0
+                          ? u.managedClients.map((mc: any) => mc.client?.name).join(", ")
+                          : "Tag clients…"}
+                      </button>
+                    )
+                  ) : (
+                    <span className="text-[rgb(var(--muted))]">—</span>
+                  )}
+                </td>
                 <td className="p-2">
                   <button onClick={() => removeUser(u.id)} className="text-xs text-red-600 hover:underline">
                     Deactivate
@@ -159,8 +253,17 @@ function UsersTab() {
 
 function ClientsTab() {
   const [clients, setClients] = useState<any[]>([]);
-  const [form, setForm] = useState({ name: "", contactName: "", contactEmail: "", currency: "USD" });
+  const [form, setForm] = useState({
+    name: "",
+    code: "",
+    contactName: "",
+    contactEmail: "",
+    currency: "USD",
+    loginEmail: "",
+    loginPassword: "",
+  });
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   function load() {
     fetch("/api/clients")
@@ -172,16 +275,20 @@ function ClientsTab() {
   async function addClient(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setNotice("");
     const res = await fetch("/api/clients", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(form),
     });
+    const data = await res.json();
     if (!res.ok) {
-      setError((await res.json()).error ?? "Failed");
+      setError(data.error ?? "Failed");
       return;
     }
-    setForm({ name: "", contactName: "", contactEmail: "", currency: "USD" });
+    if (data.loginError) setNotice(data.loginError);
+    else if (data.createdLogin) setNotice(`Client portal login created: ${data.createdLogin.email}`);
+    setForm({ name: "", code: "", contactName: "", contactEmail: "", currency: "USD", loginEmail: "", loginPassword: "" });
     load();
   }
 
@@ -197,6 +304,12 @@ function ClientsTab() {
         <h3 className="font-semibold mb-3">Add Client Account</h3>
         <form onSubmit={addClient} className="space-y-3">
           <Input placeholder="Client name" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <Input
+            placeholder="Client code (e.g. NIM) — used for job numbers"
+            required
+            value={form.code}
+            onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
+          />
           <Input
             placeholder="Contact name"
             value={form.contactName}
@@ -215,7 +328,24 @@ function ClientsTab() {
               </option>
             ))}
           </Select>
+          <div className="pt-2 border-t border-[rgb(var(--border))]">
+            <p className="text-xs text-[rgb(var(--muted))] mb-2">Optional: create the client's portal login now</p>
+            <Input
+              placeholder="Portal login email"
+              type="email"
+              value={form.loginEmail}
+              onChange={(e) => setForm({ ...form, loginEmail: e.target.value })}
+            />
+            <Input
+              placeholder="Portal login password"
+              type="password"
+              className="mt-2"
+              value={form.loginPassword}
+              onChange={(e) => setForm({ ...form, loginPassword: e.target.value })}
+            />
+          </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
+          {notice && <p className="text-sm text-emerald-600">{notice}</p>}
           <button className="btn-primary w-full">Add Client</button>
         </form>
       </Card>
@@ -225,6 +355,7 @@ function ClientsTab() {
         <table className="w-full text-sm">
           <thead className="text-left text-[rgb(var(--muted))] border-b border-[rgb(var(--border))]">
             <tr>
+              <th className="p-2">Code</th>
               <th className="p-2">Name</th>
               <th className="p-2">Contact</th>
               <th className="p-2">Currency</th>
@@ -234,6 +365,9 @@ function ClientsTab() {
           <tbody>
             {clients.map((c) => (
               <tr key={c.id} className="border-b border-[rgb(var(--border))] last:border-0">
+                <td className="p-2">
+                  <Badge color="purple">{c.code}</Badge>
+                </td>
                 <td className="p-2 font-medium">{c.name}</td>
                 <td className="p-2">{c.contactName ?? "—"} {c.contactEmail ? `· ${c.contactEmail}` : ""}</td>
                 <td className="p-2">{c.currency}</td>

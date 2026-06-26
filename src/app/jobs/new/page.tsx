@@ -13,7 +13,6 @@ export default function NewJobPage() {
   const [saving, setSaving] = useState(false);
 
   const [form, setForm] = useState({
-    jobNo: "",
     title: "",
     clientId: "",
     currency: "USD",
@@ -67,22 +66,21 @@ export default function NewJobPage() {
     <div className="max-w-2xl space-y-6">
       <h1 className="text-2xl font-bold">New Job</h1>
       <form onSubmit={handleSubmit} className="card p-6 space-y-5">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="label">Job No *</label>
-            <Input required value={form.jobNo} onChange={(e) => update("jobNo", e.target.value)} placeholder="JOB-2026-001" />
-          </div>
-          <div>
-            <label className="label">Client *</label>
-            <Select required value={form.clientId} onChange={(e) => update("clientId", e.target.value)}>
-              <option value="">Select client…</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-          </div>
+        <div>
+          <label className="label">Client *</label>
+          <Select required value={form.clientId} onChange={(e) => update("clientId", e.target.value)}>
+            <option value="">Select client…</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} ({c.code})
+              </option>
+            ))}
+          </Select>
+          {form.clientId && (
+            <p className="text-xs text-[rgb(var(--muted))] mt-1">
+              Job number will be auto-generated as {clients.find((c) => c.id === form.clientId)?.code}-NNNN.
+            </p>
+          )}
         </div>
 
         <div>

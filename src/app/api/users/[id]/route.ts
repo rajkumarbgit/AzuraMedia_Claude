@@ -12,6 +12,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const allowed = ["name", "role", "designationId", "defaultShift", "isActive"];
   const data: any = {};
   for (const key of allowed) if (key in body) data[key] = body[key];
+
+  // Replace the full set of tagged clients for an onsite manager in one go.
+  if (Array.isArray(body.managedClientIds)) {
+    await prisma.managedClient.deleteMany({ where: { userId: params.id } });
+    if (body.managedClientIds.length > 0) {
+      await prisma.managedClient.createMany({
+        data: body.managedClientIds.map((clientId: string) => ({ userId: params.id, clientId })),
+      });
+    }
+  }
+
   const updated = await prisma.user.update({ where: { id: params.id }, data });
   return NextResponse.json({ id: updated.id, name: updated.name, role: updated.role });
 }

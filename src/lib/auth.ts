@@ -32,6 +32,9 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           role: user.role,
           designation: user.designation?.name ?? null,
+          // Only set for role = CLIENT — which client account this login belongs to.
+          clientId: user.clientId ?? null,
+          defaultShift: user.defaultShift,
         };
       },
     }),
@@ -42,6 +45,8 @@ export const authOptions: NextAuthOptions = {
         token.id = (user as any).id;
         token.role = (user as any).role;
         token.designation = (user as any).designation;
+        token.clientId = (user as any).clientId;
+        token.defaultShift = (user as any).defaultShift;
       }
       return token;
     },
@@ -50,6 +55,8 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).id = token.id;
         (session.user as any).role = token.role;
         (session.user as any).designation = token.designation;
+        (session.user as any).clientId = token.clientId;
+        (session.user as any).defaultShift = token.defaultShift;
       }
       return session;
     },

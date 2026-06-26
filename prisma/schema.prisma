@@ -16,6 +16,9 @@ enum Role {
   PROJECT_MANAGER
   PRODUCTION_LEAD
   OPS
+  CLIENT
+  // Tagged to one or more clients; sees the client portal scoped to those clients only.
+  ONSITE_MANAGER
 }
 
 enum Currency {
@@ -63,6 +66,23 @@ enum TaskStatus {
   COMPLETED
 }
 
+// Per-assignment work clock state (one ops/lead/pm person's personal progress on a task).
+enum WorkStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  ON_HOLD
+  QUERY
+  COMPLETED
+}
+
+enum TimeLogAction {
+  START
+  HOLD
+  QUERY
+  RESUME
+  COMPLETE
+}
+
 enum ShiftCode {
   APAC
   EMEA
@@ -89,28 +109,56 @@ model User {
   designation   Designation? @relation(fields: [designationId], references: [id])
   isActive      Boolean  @default(true)
   defaultShift  ShiftCode @default(GEN)
+  // Set only for role = CLIENT: which client account this login belongs to.
+  clientId      String?
+  client        Client?  @relation("ClientUsers", fields: [clientId], references: [id])
+  // Presence: updated by a lightweight heartbeat ping while the app is open.
+  lastSeenAt    DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  jobsCreated       Job[]            @relation("JobCreatedBy")
+  jobsCreated        Job[]            @relation("JobCreatedBy")
   approvalsRequested ApprovalRequest[] @relation("ApprovalRequestedBy")
   approvalsReviewed  ApprovalRequest[] @relation("ApprovalReviewedBy")
-  timelineEvents    TimelineEvent[]  @relation("TimelineActor")
-  leadOfTasks       Task[]           @relation("TaskLead")
-  assignments       TaskAssignment[]
-  leaves            Leave[]          @relation("LeaveOwner")
-  leavesMarkedBy    Leave[]          @relation("LeaveMarkedBy")
-  eodComments       EodComment[]
+  timelineEvents     TimelineEvent[]  @relation("TimelineActor")
+  leadOfTasks        Task[]           @relation("TaskLead")
+  assignments        TaskAssignment[]
+  leaves             Leave[]          @relation("LeaveOwner")
+  leavesMarkedBy     Leave[]          @relation("LeaveMarkedBy")
+  eodComments        EodComment[]
+  breaks             BreakLog[]
+  jobComments        JobComment[]     @relation("JobCommentAuthor")
+  timeLogs           TimeLog[]        @relation("TimeLogActor")
+  managedClients     ManagedClient[]
 }
 
 model Client {
-  id          String   @id @default(cuid())
-  name        String
-  contactName String?
+  id           String   @id @default(cuid())
+  name         String
+  // Short uniform code used to auto-generate job numbers, e.g. "NIM", "SOL".
+  code         String   @unique
+  contactName  String?
   contactEmail String?
-  currency    Currency @default(USD)
-  createdAt   DateTime @default(now())
-  jobs        Job[]
+  currency     Currency @default(USD)
+  // Running counter for this client's auto job numbering (CODE-0001, CODE-0002, ...).
+  jobSeq       Int      @default(0)
+  createdAt    DateTime @default(now())
+  jobs         Job[]
+  users        User[]   @relation("ClientUsers")
+  managedBy    ManagedClient[]
+}
+
+// Tags a role = ONSITE_MANAGER user to one or more clients; they can view the client portal
+// scoped to exactly these clients (a CLIENT-role login is tied to a single client instead).
+model ManagedClient {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, clientId])
 }
 
 // ---------- Page-level permissions ----------
@@ -156,6 +204,7 @@ model Job {
   approvals      ApprovalRequest[]
   timelineEvents TimelineEvent[]
   tasks          Task[]
+  comments       JobComment[]
 }
 
 model Mandate {
@@ -164,6 +213,9 @@ model Mandate {
   job         Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
   name        String
   description String?
+  // Cost added to the job's client budget by this mandate (if any) — surfaced to the client
+  // as the cost impact of the approval request.
+  addedCost   Decimal?      @db.Decimal(14, 2)
   status      MandateStatus @default(ACTIVE)
   version     Int           @default(1)
   createdAt   DateTime      @default(now())
@@ -180,9 +232,13 @@ model ApprovalRequest {
   status          ApprovalStatus @default(PENDING)
   requestedById   String
   requestedBy     User           @relation("ApprovalRequestedBy", fields: [requestedById], references: [id])
+  // For MANDATE_ADD this is filled by the CLIENT user who approves/rejects (cost-increase requests
+  // are routed to the client instead of an internal manager). Other types are reviewed internally.
   reviewedById    String?
   reviewedBy      User?          @relation("ApprovalReviewedBy", fields: [reviewedById], references: [id])
   reviewComment   String?        @db.Text
+  // Snapshot of cost impact shown to the client at review time (e.g. { addedAmount, newTotal, currency }).
+  costImpact      Json?
   createdAt       DateTime       @default(now())
   reviewedAt      DateTime?
 }
@@ -197,6 +253,20 @@ model TimelineEvent {
   actorId   String?
   actor     User?    @relation("TimelineActor", fields: [actorId], references: [id])
   meta      Json?
+  createdAt DateTime @default(now())
+}
+
+// PM/Lead commentary on a job, typically added once a task/job is completed. Distinct from the
+// per-person daily EodComment below — this is a job-level note for the client/roadmap view.
+model JobComment {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  taskId    String?
+  task      Task?    @relation(fields: [taskId], references: [id])
+  authorId  String
+  author    User     @relation("JobCommentAuthor", fields: [authorId], references: [id])
+  comment   String   @db.Text
   createdAt DateTime @default(now())
 }
 
@@ -221,20 +291,44 @@ model Task {
 
   assignments TaskAssignment[]
   eodComments EodComment[]
+  comments    JobComment[]
 }
 
 model TaskAssignment {
-  id          String    @id @default(cuid())
-  taskId      String
-  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  userId      String
-  user        User      @relation(fields: [userId], references: [id])
-  shift       ShiftCode
-  date        DateTime
-  hoursBooked Float
-  createdAt   DateTime  @default(now())
+  id            String     @id @default(cuid())
+  taskId        String
+  task          Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User       @relation(fields: [userId], references: [id])
+  shift         ShiftCode
+  date          DateTime
+  hoursBooked   Float
+  // Where this booking renders on the hour-column Live Job Timeline (Gantt) for `date`.
+  // Null means "not yet positioned" — the UI falls back to the shift's start time.
+  scheduledStart DateTime?
+  // Live clocking state for this person's work on this task.
+  workStatus    WorkStatus @default(NOT_STARTED)
+  actualMinutes Int        @default(0)
+  lastStartedAt DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime   @default(now())
+
+  timeLogs TimeLog[]
 
   @@index([userId, date])
+}
+
+// Append-only audit trail of every Start/Hold/Query/Resume/Complete action, used to compute
+// actual worked time and to render the job roadmap/timeline.
+model TimeLog {
+  id           String          @id @default(cuid())
+  assignmentId String
+  assignment   TaskAssignment  @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  action       TimeLogAction
+  note         String?         @db.Text
+  actorId      String
+  actor        User            @relation("TimeLogActor", fields: [actorId], references: [id])
+  createdAt    DateTime        @default(now())
 }
 
 model Shift {
@@ -258,6 +352,20 @@ model Leave {
   createdAt    DateTime @default(now())
 
   @@unique([userId, date])
+}
+
+// A user's break entries for a given day. Server enforces a 60-minute total cap per user/day.
+model BreakLog {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  date      DateTime
+  startAt   DateTime
+  endAt     DateTime?
+  minutes   Int
+  createdAt DateTime  @default(now())
+
+  @@index([userId, date])
 }
 
 model EodComment {

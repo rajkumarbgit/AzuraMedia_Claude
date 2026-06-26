@@ -21,7 +21,31 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         include: { actor: { select: { name: true } } },
         orderBy: { createdAt: "desc" },
       },
-      tasks: { include: { lead: { select: { name: true } } } },
+      tasks: {
+        include: {
+          lead: { select: { id: true, name: true, role: true, lastSeenAt: true } },
+          assignments: {
+            include: {
+              user: { select: { id: true, name: true, role: true, lastSeenAt: true } },
+              timeLogs: { include: { actor: { select: { name: true } } }, orderBy: { createdAt: "asc" } },
+            },
+            orderBy: { date: "asc" },
+          },
+          comments: {
+            include: { author: { select: { name: true, role: true } } },
+            orderBy: { createdAt: "asc" },
+          },
+          eodComments: {
+            include: { user: { select: { name: true, role: true } } },
+            orderBy: { date: "asc" },
+          },
+        },
+      },
+      comments: {
+        where: { taskId: null },
+        include: { author: { select: { name: true, role: true } } },
+        orderBy: { createdAt: "asc" },
+      },
     },
   });
 

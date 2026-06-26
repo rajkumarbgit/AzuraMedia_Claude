@@ -8,6 +8,9 @@ export const ALWAYS_ALLOWED: Record<Role, string[]> = {
   PROJECT_MANAGER: ["dashboard"],
   PRODUCTION_LEAD: ["dashboard"],
   OPS: ["dashboard"],
+  CLIENT: ["portal"],
+  // Tagged to one or more clients; sees the client portal scoped to just those clients.
+  ONSITE_MANAGER: ["portal"],
 };
 
 export const PAGE_DEFS = [
@@ -16,6 +19,7 @@ export const PAGE_DEFS = [
   { key: "production", label: "Production Timeline" },
   { key: "admin", label: "Admin Panel" },
   { key: "dashboard", label: "My Dashboard" },
+  { key: "portal", label: "Client Portal" },
 ];
 
 export async function canAccessPage(role: Role, pageKey: string): Promise<boolean> {
@@ -42,6 +46,9 @@ export function defaultDashboardPath(role: Role): string {
     case "PRODUCTION_LEAD":
     case "OPS":
       return "/production";
+    case "CLIENT":
+    case "ONSITE_MANAGER":
+      return "/portal";
     default:
       return "/dashboard";
   }

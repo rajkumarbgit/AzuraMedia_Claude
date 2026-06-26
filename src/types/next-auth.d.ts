@@ -1,4 +1,4 @@
-import { Role } from "@prisma/client";
+import { Role, ShiftCode } from "@prisma/client";
 import "next-auth";
 
 declare module "next-auth" {
@@ -9,12 +9,16 @@ declare module "next-auth" {
       email: string;
       role: Role;
       designation: string | null;
+      clientId: string | null;
+      defaultShift: ShiftCode;
     };
   }
   interface User {
     id: string;
     role: Role;
     designation: string | null;
+    clientId?: string | null;
+    defaultShift?: ShiftCode;
   }
 }
 
@@ -23,5 +27,7 @@ declare module "next-auth/jwt" {
     id: string;
     role: Role;
     designation: string | null;
+    clientId: string | null;
+    defaultShift: ShiftCode;
   }
 }

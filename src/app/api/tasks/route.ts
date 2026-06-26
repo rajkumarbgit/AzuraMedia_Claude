@@ -26,9 +26,12 @@ export async function GET(req: NextRequest) {
         : {}),
     },
     include: {
-      job: { select: { id: true, jobNo: true, title: true } },
-      lead: { select: { id: true, name: true } },
-      assignments: { include: { user: { select: { id: true, name: true } } } },
+      job: { select: { id: true, jobNo: true, title: true, clientId: true } },
+      lead: { select: { id: true, name: true, role: true, lastSeenAt: true } },
+      assignments: {
+        include: { user: { select: { id: true, name: true, role: true, lastSeenAt: true } } },
+        orderBy: { date: "asc" },
+      },
     },
     orderBy: { startDate: "asc" },
   });

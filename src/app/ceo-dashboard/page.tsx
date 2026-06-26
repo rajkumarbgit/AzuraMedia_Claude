@@ -3,8 +3,20 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { StatCard, Card, Input, Select } from "@/components/ui";
+import { StatCard, Card, Input, Select, AlertBanner } from "@/components/ui";
 import { formatMoney } from "@/lib/currency";
+
+function ChartTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl bg-ink text-white px-3 py-2 text-xs font-semibold shadow-popover">
+      <div className="text-white/60 font-medium mb-0.5">{label}</div>
+      {payload.map((p: any) => (
+        <div key={p.dataKey}>{p.value} jobs</div>
+      ))}
+    </div>
+  );
+}
 
 export default function CeoDashboardPage() {
   const [data, setData] = useState<any>(null);
@@ -34,6 +46,16 @@ export default function CeoDashboardPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">CEO Dashboard</h1>
 
+      {data.pendingApprovals > 0 && (
+        <AlertBanner
+          variant="warning"
+          title={`${data.pendingApprovals} mandate change request${data.pendingApprovals > 1 ? "s" : ""} awaiting your approval`}
+          message="Review and approve or reject pending budget/mandate changes."
+          actionLabel="Review Jobs"
+          href="/jobs"
+        />
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label="Total Jobs" value={data.totalJobs} />
         <StatCard label="Completed" value={data.completedCount} accent="green" />
@@ -46,12 +68,18 @@ export default function CeoDashboardPage() {
       <Card>
         <h3 className="font-semibold mb-3">Jobs by Status</h3>
         <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={data.byStatus}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-            <XAxis dataKey="status" fontSize={12} />
-            <YAxis fontSize={12} allowDecimals={false} />
-            <Tooltip />
-            <Bar dataKey="count" fill="#3866f5" radius={[6, 6, 0, 0]} />
+          <BarChart data={data.byStatus} barCategoryGap="32%">
+            <defs>
+              <linearGradient id="barFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#28C5FF" />
+                <stop offset="100%" stopColor="#1B4DFF" />
+              </linearGradient>
+            </defs>
+            <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.15} />
+            <XAxis dataKey="status" fontSize={12} tickLine={false} axisLine={false} />
+            <YAxis fontSize={12} allowDecimals={false} tickLine={false} axisLine={false} />
+            <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(27,77,255,0.06)" }} />
+            <Bar dataKey="count" fill="url(#barFill)" radius={[10, 10, 0, 0]} maxBarSize={48} />
           </BarChart>
         </ResponsiveContainer>
       </Card>

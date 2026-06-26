@@ -1,50 +1,55 @@
 import { getServerSession } from "next-auth";
-import Link from "next/link";
 import { authOptions } from "@/lib/auth";
 import { canAccessPage } from "@/lib/permissions";
+import { prisma } from "@/lib/prisma";
+import { presenceStatus } from "@/lib/clock";
 import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { LogoutButton } from "@/components/LogoutButton";
+import { Avatar } from "@/components/ui";
+import { SidebarNav, type NavItem } from "@/components/SidebarNav";
+import { PresenceHeartbeat } from "@/components/PresenceHeartbeat";
 
-const NAV = [
-  { key: "dashboard", href: "/dashboard", label: "My Dashboard", icon: "🏠" },
-  { key: "jobs", href: "/jobs", label: "Jobs", icon: "📁" },
-  { key: "ceo-dashboard", href: "/ceo-dashboard", label: "CEO Dashboard", icon: "📊" },
-  { key: "production", href: "/production", label: "Production Timeline", icon: "🗓️" },
-  { key: "admin", href: "/admin", label: "Admin", icon: "⚙️" },
+const NAV: NavItem[] = [
+  { key: "dashboard", href: "/dashboard", label: "My Dashboard", iconName: "LayoutDashboard" },
+  { key: "jobs", href: "/jobs", label: "Jobs", iconName: "FolderKanban" },
+  { key: "ceo-dashboard", href: "/ceo-dashboard", label: "CEO Dashboard", iconName: "TrendingUp" },
+  { key: "production", href: "/production", label: "Production Timeline", iconName: "CalendarClock" },
+  { key: "portal", href: "/portal", label: "Client Portal", iconName: "Building2" },
+  { key: "admin", href: "/admin", label: "Admin", iconName: "Settings" },
 ];
 
 export async function AppShell({ children }: { children: React.ReactNode }) {
   const session = await getServerSession(authOptions);
   const role = session!.user.role;
 
-  const visible = await Promise.all(
-    NAV.map(async (item) => ({ ...item, allowed: await canAccessPage(role, item.key) }))
-  );
+  const visibleFlags = await Promise.all(NAV.map((item) => canAccessPage(role, item.key)));
+  const visible = NAV.filter((_, i) => visibleFlags[i]);
+
+  // Live presence for the current user's own profile block in the sidebar.
+  const todayStart = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00.000Z");
+  const [me, todaysLeave] = await Promise.all([
+    prisma.user.findUnique({ where: { id: session!.user.id }, select: { lastSeenAt: true } }),
+    prisma.leave.findUnique({ where: { userId_date: { userId: session!.user.id, date: todayStart } } }),
+  ]);
+  const myPresence = presenceStatus(me?.lastSeenAt, !!todaysLeave);
 
   return (
     <div className="min-h-screen flex">
-      <aside className="w-64 shrink-0 border-r border-[rgb(var(--border))] flex flex-col p-4 hidden md:flex">
-        <div className="mb-8 px-2">
+      <PresenceHeartbeat />
+      <aside className="w-64 shrink-0 border-r border-[rgb(var(--border))] flex flex-col gap-1 p-4 hidden md:flex">
+        <div className="mb-6 px-2">
           <Logo size={28} />
         </div>
-        <nav className="flex-1 space-y-1">
-          {visible
-            .filter((i) => i.allowed)
-            .map((item) => (
-              <Link
-                key={item.key}
-                href={item.href}
-                className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium hover:bg-black/5 dark:hover:bg-white/5 transition"
-              >
-                <span>{item.icon}</span>
-                {item.label}
-              </Link>
-            ))}
-        </nav>
-        <div className="px-2 pt-4 border-t border-[rgb(var(--border))] text-xs text-[rgb(var(--muted))]">
-          <div className="font-medium text-sm text-[rgb(var(--fg))]">{session!.user.name}</div>
-          <div>{session!.user.designation ?? session!.user.role.replace("_", " ")}</div>
+        <SidebarNav items={visible} />
+        <div className="flex items-center gap-3 px-2 pt-4 border-t border-[rgb(var(--border))]">
+          <Avatar name={session!.user.name ?? "?"} size={38} presence={myPresence} />
+          <div className="min-w-0">
+            <div className="font-bold text-sm truncate text-[rgb(var(--fg))]">{session!.user.name}</div>
+            <div className="text-xs text-[rgb(var(--muted))] truncate">
+              {session!.user.designation ?? session!.user.role.replace("_", " ")}
+            </div>
+          </div>
         </div>
       </aside>
 

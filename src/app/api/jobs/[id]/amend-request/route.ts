@@ -17,8 +17,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const payload: any = {};
   for (const key of allowed) if (key in changes) payload[key] = changes[key];
 
-  if (Object.keys(payload).length === 0) {
-    return NextResponse.json({ error: "No valid fields to amend" }, { status: 400 });
+  // A client (or anyone) can also submit a general, free-text amendment request with no
+  // specific field changes — e.g. "please extend the deadline" — for PM/CEO to action manually.
+  if (Object.keys(payload).length === 0 && !comment?.trim()) {
+    return NextResponse.json({ error: "Describe the amendment you're requesting" }, { status: 400 });
   }
 
   if (isManager(user!.role)) {
